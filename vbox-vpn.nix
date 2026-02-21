@@ -26,6 +26,53 @@ in
       default = "vpn";
       description = ''VirtualBox VM name. It is expected that VM is configured as a router
       forwarding incoming all traffic back. VM networking mode is Host-Only.
+
+      Sample for Debian 13:
+      /etc/systemd/system/set-gw.service:
+        [Unit]
+        Description=Set Gateway
+        After=network.target
+        Requires=network.target
+        [Service]
+        Type=simple
+        Restart=on-failure
+        ExecStart=/etc/systemd/system/set-gw.sh
+        StartLimitBurst=2222
+
+        [Install]
+        WantedBy=multi-user.target
+
+      /etc/systemd/system/set-gw.sh:
+        #!/bin/bash
+
+        set -e
+        set -x
+
+        ip route replace default via 192.168.56.1 dev enp0s3
+
+      /etc/systemd/system/router.sh:
+        [Unit]
+        Description=Forwarding Packets
+        After=network-online.target
+        Requires=network-online.target
+        [Service]
+        Type=simple
+        ExecStart=/etc/systemd/system/router.sh
+
+        [Install]
+        WantedBy=multi-user.target
+
+      /etc/systemd/system/router.sh:
+        #!/bin/bash
+
+        set -e
+        set -x
+
+        echo 1 > /proc/sys/net/ipv4/ip_forward
+        echo 0 > /proc/sys/net/ipv4/conf/enp0s3/send_redirects
+
+        iptables -A FORWARD  -j ACCEPT
+        iptables -t nat -A POSTROUTING -j MASQUERADE
       '';
     };
     packet-mark = mkOption {
