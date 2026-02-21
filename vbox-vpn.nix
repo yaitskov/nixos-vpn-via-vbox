@@ -4,7 +4,7 @@
 , ...
 }:
 let
-  cfg = config.services.literal-flake-input;
+  cfg = config.services.vbox-vpn;
   inherit (lib) mkOption types optionals;
   inherit (types) ints;
 in
@@ -129,8 +129,8 @@ in
             set +e
             echo "Start cleanup. GWIP = $GWIP; GWNIC = $GWNIC"
             [ -n "$GWIP" ] && [ -n "$GWNIC" ] && ip route replace default via "$GWIP" dev "$GWNIC"
-            ip route flush table "${cfg.routing-table}"
-            ip rule list | grep "fwmark 0x${cfg.packet-mark} lookup ${cfg.routing-table}" | while read -r PREF _REST ; do
+            ip route flush table "${toString cfg.routing-table}"
+            ip rule list | grep "fwmark 0x${toString cfg.packet-mark} lookup ${toString cfg.routing-table}" | while read -r PREF _REST ; do
               ip rule del pref "''${PREF%:}"
             done
             iptables -t mangle -F PREROUTING
@@ -149,11 +149,11 @@ in
 
           iptables -t nat -C POSTROUTING -s "$VMNET" -j MASQUERADE || \
             iptables -t nat -A POSTROUTING -s "$VMNET" -j MASQUERADE
-          ip rule add fwmark "${cfg.packet-mark}" table "${cfg.routing-table}"
+          ip rule add fwmark "${toString cfg.packet-mark}" table "${toString cfg.routing-table}"
           # Temp rules to check VPN note is up and keep plain connectivity
-          ip route replace default via "$VMIP" dev "${cfg.vm-nic}" table "${cfg.routing-table}"
-          iptables -t mangle -C OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${cfg.packet-mark}" || \
-            iptables -t mangle -A OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${cfg.packet-mark}"
+          ip route replace default via "$VMIP" dev "${cfg.vm-nic}" table "${toString cfg.routing-table}"
+          iptables -t mangle -C OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${toString cfg.packet-mark}" || \
+            iptables -t mangle -A OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${toString cfg.packet-mark}"
           while : ; do
             ping -I "${cfg.vm-nic}" -W 1 -c 1 "${cfg.ping-target}" && { echo "VM ${cfg.vm-dns} just started FORWARDING" ; break ; }
             echo "Wait until VM ${cfg.vm-dns} start forwarding packets"
@@ -161,10 +161,10 @@ in
           done
 
           ip route replace default via "$VMIP" dev "${cfg.vm-nic}"
-          ip route replace default via "$GWIP" dev "$GWNIC" table "${cfg.routing-table}"
+          ip route replace default via "$GWIP" dev "$GWNIC" table "${toString cfg.routing-table}"
           iptables -t mangle -F OUTPUT
-          iptables -t mangle -C PREROUTING -s "${cfg.vm-dns}" -j MARK --set-mark "${cfg.packet-mark}" || \
-            iptables -t mangle -A PREROUTING -s "${cfg.vm-dns}" -j MARK --set-mark "${cfg.packet-mark}"
+          iptables -t mangle -C PREROUTING -s "${cfg.vm-dns}" -j MARK --set-mark "${toString cfg.packet-mark}" || \
+            iptables -t mangle -A PREROUTING -s "${cfg.vm-dns}" -j MARK --set-mark "${toString cfg.packet-mark}"
           echo "NET routes ${cfg.ping-target} only through ${cfg.vm-dns}"
           ping -W 3 -c 1 "${cfg.ping-target}"
           echo "ALL traffic goes through VM ${cfg.vm-dns}"
@@ -174,7 +174,7 @@ in
             sleep 90
             ping -W 13 -c 1 "${cfg.ping-target}" || {
               echo "VM ${cfg.vm-dns} is OFFLINE. Try ping [${cfg.ping-target}] directly..." ;
-              iptables -t mangle -A OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${cfg.packet-mark}"
+              iptables -t mangle -A OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${toString cfg.packet-mark}"
               if ping -I "$GWNIC" -W 13 -c 1 "${cfg.ping-target}" ; then
                 echo "VM needs to be restarted"
               else
@@ -187,6 +187,10 @@ in
       };
     in
       lib.mkIf cfg.enable {
+        boot.kernel.sysctl = {
+          "net.ipv4.ip_forward" = 1;
+        };
+
         virtualisation.virtualbox.host.enable = true;
         virtualisation.virtualbox.host.enableExtensionPack = true;
         users.extraGroups.vboxusers.members = [ cfg.user ];

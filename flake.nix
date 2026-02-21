@@ -8,7 +8,8 @@
       let
         packageName = "vbox-vpn";
         pkgs = nixpkgs.legacyPackages.${system};
-      in
+      in {
         nixosModules.default = import ./vbox-vpn.nix;
+      }
     );
 }
