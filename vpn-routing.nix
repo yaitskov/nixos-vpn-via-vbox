@@ -98,6 +98,7 @@ pkgs.writeShellApplication {
         iptables -t mangle -A OUTPUT -d "${cfg.ping-target}" -j MARK --set-mark "${toString cfg.packet-mark}"
         if ping -I "$GWNIC" -W 13 -c 1 "${cfg.ping-target}" ; then
           echo "VM needs to be restarted"
+          systemctl restart vpn-vm
         else
           echo "Total offline just wait"
         fi
