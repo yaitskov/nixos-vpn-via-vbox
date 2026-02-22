@@ -7,6 +7,7 @@ let
   cfg = config.services.vbox-vpn;
   inherit (lib) mkOption types optionals;
   inherit (types) ints;
+  default-route-metric = import ./default-route-metric.nix { inherit pkgs; };
 in
 {
   options.services.vbox-vpn = {
@@ -151,7 +152,7 @@ in
       };
       vpn-routing = pkgs.writeShellApplication {
         name = "vpn-routing";
-        runtimeInputs = with pkgs; [iputils iproute2 iptables dig];
+        runtimeInputs = with pkgs; [iputils iproute2 iptables dig default-route-metric];
         text =
           ''
           set -x
@@ -159,6 +160,7 @@ in
           GWIP=
           VMIP="$(dig "${cfg.vm-dns}" +short)"
           VMNET="$(ip route list | grep "dev ${cfg.vm-nic}" | while read -r N _R ; do echo "$N" ; done)"
+          DEFAULT_ROUTE_METRIC="$(default-route-metric)"
           while read -r _default _via GWIP_R _dev GWNIC_R _rest ; do
             GWIP="$GWIP_R"
             GWNIC="$GWNIC_R"
@@ -175,7 +177,8 @@ in
           function cleanup() {
             set +e
             echo "Start cleanup. GWIP = $GWIP; GWNIC = $GWNIC"
-            [ -n "$GWIP" ] && [ -n "$GWNIC" ] && ip route replace default via "$GWIP" dev "$GWNIC"
+            # shellcheck disable=SC2086
+            [ -n "$GWIP" ] && [ -n "$GWNIC" ] && ip route replace default via "$GWIP" dev "$GWNIC" $DEFAULT_ROUTE_METRIC
             ip route flush table "${toString cfg.routing-table}"
             ip rule list | grep "fwmark 0x${toString cfg.packet-mark} lookup ${toString cfg.routing-table}" | while read -r PREF _REST ; do
               ip rule del pref "''${PREF%:}"
@@ -207,7 +210,8 @@ in
             sleep 1
           done
 
-          ip route replace default via "$VMIP" dev "${cfg.vm-nic}"
+          # shellcheck disable=SC2086
+          ip route replace default via "$VMIP" dev "${cfg.vm-nic}" $DEFAULT_ROUTE_METRIC
           ip route replace default via "$GWIP" dev "$GWNIC" table "${toString cfg.routing-table}"
           iptables -t mangle -F OUTPUT
           iptables -t mangle -C PREROUTING -s "${cfg.vm-dns}" -j MARK --set-mark "${toString cfg.packet-mark}" || \
